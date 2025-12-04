@@ -1,0 +1,23 @@
+{% extends 'base.html' %}
+{% block content %}
+<h1 class="mb-4">{{ t['title_settings_branding'] }}</h1>
+<form method="post">
+  <div class="mb-3">
+    <label class="form-label">Restaurant Name</label>
+    <input type="text" name="restaurant_name" class="form-control" value="{{ app_settings.restaurant_name }}">
+  </div>
+  <div class="mb-3">
+    <label class="form-label">Default Language</label>
+    <select name="language" class="form-select">
+      <option value="en" {% if app_settings.language == 'en' %}selected{% endif %}>English</option>
+      <option value="ko" {% if app_settings.language == 'ko' %}selected{% endif %}>한국어</option>
+    </select>
+  </div>
+  <div class="mb-3">
+    <label class="form-label">KakaoTalk Link</label>
+    <input type="text" name="kakao_link" class="form-control" value="{{ app_settings.kakao_link }}">
+    <div class="form-text">Paste your KakaoTalk Open Chat or Channel URL.</div>
+  </div>
+  <button type="submit" class="btn btn-primary">{{ t['btn_save'] }}</button>
+</form>
+{% endblock %}
