@@ -21,13 +21,32 @@
     </button>
     <div class="collapse navbar-collapse" id="navbarNav">
       <ul class="navbar-nav me-auto mb-2 mb-lg-0">
-        <li class="nav-item"><a class="nav-link" href="{{ url_for('dashboard') }}">{{ t['nav_dashboard'] }}</a></li>
-        <li class="nav-item"><a class="nav-link" href="{{ url_for('income_overview') }}">{{ t['nav_income'] }}</a></li>
-        <li class="nav-item"><a class="nav-link" href="{{ url_for('inventory_list') }}">{{ t['nav_inventory'] }}</a></li>
-        <li class="nav-item"><a class="nav-link" href="{{ url_for('employees_list') }}">{{ t['nav_employees'] }}</a></li>
-        <li class="nav-item"><a class="nav-link" href="{{ url_for('wages') }}">{{ t['nav_wages'] }}</a></li>
-        <li class="nav-item"><a class="nav-link" href="{{ url_for('settings') }}">{{ t['nav_settings'] }}</a></li>
-      </ul>
+  <li class="nav-item">
+    <a class="nav-link" href="{{ url_for('dashboard') }}">{{ t['nav_dashboard'] }}</a>
+  </li>
+
+  <li class="nav-item">
+    <a class="nav-link" href="{{ url_for('income_overview') }}">{{ t['nav_income'] }}</a>
+  </li>
+
+  <!-- NEW: Menu tab -->
+  <li class="nav-item">
+    <a class="nav-link" href="{{ url_for('menu_list') }}">{{ t['title_menu'] }}</a>
+  </li>
+
+  <li class="nav-item">
+    <a class="nav-link" href="{{ url_for('inventory_list') }}">{{ t['nav_inventory'] }}</a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link" href="{{ url_for('employees_list') }}">{{ t['nav_employees'] }}</a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link" href="{{ url_for('wages') }}">{{ t['nav_wages'] }}</a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link" href="{{ url_for('settings') }}">{{ t['nav_settings'] }}</a>
+  </li>
+</ul>
       <div class="d-flex align-items-center">
         {% if settings.kakao_link %}
         <a href="{{ settings.kakao_link }}" target="_blank" class="btn btn-warning btn-sm me-3">

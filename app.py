@@ -1,11 +1,15 @@
 from flask import Flask, render_template, redirect, url_for, request, session, g
-from models.db import get_connection, init_db
-from models import settings as settings_model
 from datetime import date, timedelta
 
+from models.db import get_connection, init_db
+from models import settings as settings_model
 from models import income as income_model
 from models import menu as menu_model
 
+
+# -------------------------------------------------
+# Language dictionary
+# -------------------------------------------------
 TRANSLATIONS = {
     'en': {
         'nav_dashboard': 'Dashboard',
@@ -54,12 +58,15 @@ TRANSLATIONS = {
 }
 
 
+# -------------------------------------------------
+# Create app
+# -------------------------------------------------
 def create_app():
     app = Flask(__name__)
     app.config['SECRET_KEY'] = 'change-this-secret-key'
 
     # ---------------------------
-    # Database
+    # Database connection
     # ---------------------------
     @app.before_request
     def before_request():
@@ -73,7 +80,7 @@ def create_app():
             conn.close()
 
     # ---------------------------
-    # Global translations
+    # Global template variables
     # ---------------------------
     @app.context_processor
     def inject_globals():
@@ -89,7 +96,7 @@ def create_app():
         return dict(settings=app_settings, t=TRANSLATIONS[lang], current_lang=lang)
 
     # ---------------------------
-    # Language route
+    # Language switch
     # ---------------------------
     @app.route('/set_language/<lang_code>')
     def set_language(lang_code):
@@ -121,7 +128,7 @@ def create_app():
         return render_template('dashboard.html')
 
     # ---------------------------
-    # Income Overview
+    # Income overview
     # ---------------------------
     @app.route('/income')
     def income_overview():
@@ -135,16 +142,16 @@ def create_app():
         end_date = request.args.get("end_date") or default_end
 
         daily_rows = []
-        total_income = 0.0
-        total_dine_in = 0.0
-        total_delivery = 0.0
+        total_income = 0
+        total_dine_in = 0
+        total_delivery = 0
 
         if conn:
             daily_rows = income_model.get_daily_income(conn, start_date, end_date)
             for row in daily_rows:
-                total_income += row["total_income"] or 0
-                total_dine_in += row["dine_in_income"] or 0
-                total_delivery += row["delivery_income"] or 0
+                total_income += row.get("total_income", 0)
+                total_dine_in += row.get("dine_in_income", 0)
+                total_delivery += row.get("delivery_income", 0)
 
         return render_template(
             "income/overview.html",
@@ -157,7 +164,7 @@ def create_app():
         )
 
     # ---------------------------
-    # Record Sales
+    # Record sales
     # ---------------------------
     @app.route('/income/record', methods=['GET', 'POST'])
     def record_sales():
@@ -173,8 +180,8 @@ def create_app():
 
             sales_rows = []
             for mid in menu_ids:
-                dine_in_qty = int(request.form.get(f"dine_in_{mid}", "0") or 0)
-                delivery_qty = int(request.form.get(f"delivery_{mid}", "0") or 0)
+                dine_in_qty = int(request.form.get(f"dine_in_{mid}", 0) or 0)
+                delivery_qty = int(request.form.get(f"delivery_{mid}", 0) or 0)
 
                 sales_rows.append({
                     "menu_item_id": int(mid),
@@ -189,12 +196,13 @@ def create_app():
         return render_template("income/record_sales.html", menu_items=menu_items, date_str=today_str)
 
     # ---------------------------
-    # Menu List
+    # Menu list (add/show)
     # ---------------------------
     @app.route('/menu', methods=['GET', 'POST'])
     def menu_list():
         conn = getattr(g, "db_conn", None)
-        if not conn:
+
+        if conn is None:
             return render_template("income/menu.html", menu_items=[])
 
         if request.method == "POST":
@@ -206,7 +214,7 @@ def create_app():
                 try:
                     price = float(price_str)
                 except ValueError:
-                    price = 0.0
+                    price = 0
 
                 if price > 0:
                     menu_model.add_menu_item(conn, name, category, price, image_path=None)
@@ -216,6 +224,33 @@ def create_app():
         menu_items = menu_model.get_menu_items(conn, include_inactive=True)
         return render_template("income/menu.html", menu_items=menu_items)
 
+    # ---------------------------
+    # Menu deactivate
+    # ---------------------------
+    @app.route('/menu/<int:item_id>/deactivate')
+    def menu_deactivate(item_id: int):
+        """
+        Mark a menu item as inactive (soft delete).
+        The item stays in the database but is hidden from active lists.
+        """
+        conn = getattr(g, "db_conn", None)
+        if conn:
+            menu_model.set_menu_item_active(conn, item_id, active=False)
+        return redirect(url_for("menu_list"))
+
+    # ---------------------------
+    # Menu activate
+    # ---------------------------
+    @app.route('/menu/<int:item_id>/activate')
+    def menu_activate(item_id: int):
+        conn = getattr(g, "db_conn", None)
+        if conn:
+            menu_model.set_menu_item_active(conn, item_id, active=True)
+        return redirect(url_for("menu_list"))
+
+    # ---------------------------
+    # Recipes page
+    # ---------------------------
     @app.route('/menu/recipes')
     def menu_recipes():
         return render_template('income/recipes.html')
@@ -291,9 +326,9 @@ def create_app():
     return app
 
 
-# ---------------------------
-# Run App
-# ---------------------------
+# -------------------------------------------------
+# Run app
+# -------------------------------------------------
 if __name__ == '__main__':
     app = create_app()
     app.run(debug=True)

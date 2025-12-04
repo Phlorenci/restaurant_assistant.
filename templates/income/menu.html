@@ -1,1 +1,113 @@
-{% extends 'base.html' %}\n{% block content %}\n<h1>{{ t['title_menu'] }}</h1>\n<p>TODO: menu item list and management.</p>\n{% endblock %}\n
+{% extends 'base.html' %}
+{% block content %}
+<h1 class="mb-4">{{ t['title_menu'] }}</h1>
+
+<div class="row">
+  <!-- Left: Add new menu item form -->
+  <div class="col-md-4">
+    <div class="card mb-4">
+      <div class="card-body">
+        <h5 class="card-title">Add New Menu Item</h5>
+
+        <!-- Form submits to /menu (same route) with POST -->
+        <form method="post">
+          <!-- Name -->
+          <div class="mb-3">
+            <label class="form-label">Name</label>
+            <input type="text"
+                   name="name"
+                   class="form-control"
+                   placeholder="e.g. Margherita Pizza"
+                   required>
+          </div>
+
+          <!-- Category (optional) -->
+          <div class="mb-3">
+            <label class="form-label">Category</label>
+            <input type="text"
+                   name="category"
+                   class="form-control"
+                   placeholder="e.g. pizza, drink, side">
+          </div>
+
+          <!-- Price -->
+          <div class="mb-3">
+            <label class="form-label">Price (₩)</label>
+            <input type="number"
+                   name="price"
+                   class="form-control"
+                   step="100"
+                   min="0"
+                   required>
+          </div>
+
+          <button type="submit" class="btn btn-primary w-100">
+            {{ t['btn_save'] }}
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- Right: Table of existing menu items -->
+  <div class="col-md-8">
+    <div class="card mb-4">
+      <div class="card-body">
+        <h5 class="card-title">Menu Items</h5>
+
+        {% if menu_items %}
+        <div class="table-responsive">
+          <table class="table table-striped align-middle">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Name</th>
+                <th>Category</th>
+                <th>Price (₩)</th>
+                <th>Status</th>
+                <th style="width: 180px;">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for item in menu_items %}
+              <tr>
+                <td>{{ item.id }}</td>
+                <td>{{ item.name }}</td>
+                <td>{{ item.category or '-' }}</td>
+                <td>{{ '₩{:,.0f}'.format(item.price) }}</td>
+                <td>
+                  {% if item.active %}
+                    <span class="badge bg-success">Active</span>
+                  {% else %}
+                    <span class="badge bg-secondary">Inactive</span>
+                  {% endif %}
+                </td>
+                <td>
+                  {% if item.active %}
+                    <!-- Deactivate button -->
+                    <a href="{{ url_for('menu_deactivate', item_id=item.id) }}"
+                       class="btn btn-sm btn-outline-danger">
+                      Deactivate
+                    </a>
+                  {% else %}
+                    <!-- Activate button -->
+                    <a href="{{ url_for('menu_activate', item_id=item.id) }}"
+                       class="btn btn-sm btn-outline-success">
+                      Activate
+                    </a>
+                  {% endif %}
+                  <!-- Later we can add: Edit button here -->
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% else %}
+        <p>No menu items yet. Use the form on the left to add your first item.</p>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
