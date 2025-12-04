@@ -1,1 +1,72 @@
-{% extends 'base.html' %}\n{% block content %}\n<h1>{{ t['title_income_overview'] }}</h1>\n<p>TODO: income charts & tables.</p>\n{% endblock %}\n
+{% extends 'base.html' %}
+{% block content %}
+<h1 class="mb-4">{{ t['title_income_overview'] }}</h1>
+
+<form method="get" class="row g-3 mb-4">
+  <div class="col-md-3">
+    <label class="form-label">Start date</label>
+    <input type="date" name="start_date" class="form-control" value="{{ start_date }}">
+  </div>
+  <div class="col-md-3">
+    <label class="form-label">End date</label>
+    <input type="date" name="end_date" class="form-control" value="{{ end_date }}">
+  </div>
+  <div class="col-md-3 d-flex align-items-end">
+    <button type="submit" class="btn btn-primary w-100">Show</button>
+  </div>
+</form>
+
+<div class="row mb-4">
+  <div class="col-md-4">
+    <div class="card">
+      <div class="card-body">
+        <h5 class="card-title">Total Income</h5>
+        <p class="card-text fw-bold">{{ '₩{:,.0f}'.format(total_income) }}</p>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-4">
+    <div class="card">
+      <div class="card-body">
+        <h5 class="card-title">Dine-in Income</h5>
+        <p class="card-text fw-bold">{{ '₩{:,.0f}'.format(total_dine_in) }}</p>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-4">
+    <div class="card">
+      <div class="card-body">
+        <h5 class="card-title">Delivery Income</h5>
+        <p class="card-text fw-bold">{{ '₩{:,.0f}'.format(total_delivery) }}</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% if daily_rows %}
+<div class="table-responsive">
+  <table class="table table-striped">
+    <thead>
+      <tr>
+        <th>Date</th>
+        <th>Dine-in Income</th>
+        <th>Delivery Income</th>
+        <th>Total Income</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in daily_rows %}
+      <tr>
+        <td>{{ row.date }}</td>
+        <td>{{ '₩{:,.0f}'.format(row.dine_in_income or 0) }}</td>
+        <td>{{ '₩{:,.0f}'.format(row.delivery_income or 0) }}</td>
+        <td>{{ '₩{:,.0f}'.format(row.total_income or 0) }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<p>No income data in this period.</p>
+{% endif %}
+{% endblock %}
