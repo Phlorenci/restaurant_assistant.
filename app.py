@@ -1,6 +1,10 @@
 from flask import Flask, render_template, redirect, url_for, request, session, g
 from models.db import get_connection, init_db
 from models import settings as settings_model
+from datetime import date, timedelta  # for default date ranges
+
+from models import income as income_model
+from models import menu as menu_model
 
 TRANSLATIONS = {
     'en': {
@@ -99,15 +103,113 @@ def create_app():
     def dashboard():
         return render_template('dashboard.html')
 
-    @app.route('/income')
+   @app.route('/income')
     def income_overview():
-        return render_template('income/overview.html')
+    """
+    Show income summary for a date range.
+
+    - If user does not give dates, we show the last 7 days by default.
+    - Uses models.income.get_daily_income(...) to compute totals.
+    """
+    conn = getattr(g, "db_conn", None)
+
+    # Today and 6 days ago → default last 7 days
+    today = date.today()
+    default_start = (today - timedelta(days=6)).isoformat()
+    default_end = today.isoformat()
+
+    # Get dates from query params (?start_date=...&end_date=...)
+    start_date = request.args.get("start_date") or default_start
+    end_date = request.args.get("end_date") or default_end
+
+    daily_rows = []
+    total_income = 0.0
+    total_dine_in = 0.0
+    total_delivery = 0.0
+
+    if conn is not None:
+        daily_rows = income_model.get_daily_income(conn, start_date, end_date)
+        for row in daily_rows:
+            total_income += row["total_income"] or 0
+            total_dine_in += row["dine_in_income"] or 0
+            total_delivery += row["delivery_income"] or 0
+
+    return render_template(
+        "income/overview.html",
+        start_date=start_date,
+        end_date=end_date,
+        daily_rows=daily_rows,
+        total_income=total_income,
+        total_dine_in=total_dine_in,
+        total_delivery=total_delivery,
+    )
+
 
     @app.route('/income/record', methods=['GET', 'POST'])
+    
     def record_sales():
-        if request.method == 'POST':
-            pass
-        return render_template('income/record_sales.html')
+    """
+    Show a form to record today's (or chosen date's) sales per menu item.
+
+    GET:
+        - Load active menu items and show a table with input boxes.
+    POST:
+        - Read quantities from the form for each item.
+        - Call income_model.record_sales_batch(...)
+    """
+    conn = getattr(g, "db_conn", None)
+    if conn is None:
+        # Should not happen normally, but just in case
+        return render_template("income/record_sales.html", menu_items=[], date_str="")
+
+    # Default date = today
+    today_str = date.today().isoformat()
+
+    if request.method == "POST":
+        # Date comes from the form (allow user to change it)
+        date_str = request.form.get("date") or today_str
+
+        # Get all menu IDs from hidden fields (one per row)
+        menu_ids = request.form.getlist("menu_id")
+
+        sales_rows = []
+        for mid in menu_ids:
+            # Build input names based on menu ID
+            dine_in_name = f"dine_in_{mid}"
+            delivery_name = f"delivery_{mid}"
+
+            dine_in_qty_str = request.form.get(dine_in_name, "0")
+            delivery_qty_str = request.form.get(delivery_name, "0")
+
+            # Convert to int safely
+            try:
+                dine_in_qty = int(dine_in_qty_str) if dine_in_qty_str else 0
+            except ValueError:
+                dine_in_qty = 0
+
+            try:
+                delivery_qty = int(delivery_qty_str) if delivery_qty_str else 0
+            except ValueError:
+                delivery_qty = 0
+
+            sales_rows.append(
+                {
+                    "menu_item_id": int(mid),
+                    "dine_in_qty": dine_in_qty,
+                    "delivery_qty": delivery_qty,
+                }
+            )
+
+        # Save all rows for this date
+        income_model.record_sales_batch(conn, date_str, sales_rows)
+
+        # After saving, redirect to income overview for that date range
+        return redirect(url_for("income_overview", start_date=date_str, end_date=date_str))
+
+    # If GET: show form with all active menu items
+    menu_items = menu_model.get_menu_items(conn, include_inactive=False)
+    return render_template("income/record_sales.html", menu_items=menu_items, date_str=today_str)
+
 
     @app.route('/menu')
     def menu_list():
