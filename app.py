@@ -58,9 +58,9 @@ def create_app():
     app = Flask(__name__)
     app.config['SECRET_KEY'] = 'change-this-secret-key'
 
-    # -----------------------------------------
-    # Database Connection
-    # -----------------------------------------
+    # ---------------------------
+    # Database
+    # ---------------------------
     @app.before_request
     def before_request():
         g.db_conn = get_connection()
@@ -69,12 +69,12 @@ def create_app():
     @app.teardown_request
     def teardown_request(exception):
         conn = getattr(g, 'db_conn', None)
-        if conn is not None:
+        if conn:
             conn.close()
 
-    # -----------------------------------------
-    # Global Translations + Settings
-    # -----------------------------------------
+    # ---------------------------
+    # Global translations
+    # ---------------------------
     @app.context_processor
     def inject_globals():
         conn = getattr(g, 'db_conn', None)
@@ -88,9 +88,9 @@ def create_app():
 
         return dict(settings=app_settings, t=TRANSLATIONS[lang], current_lang=lang)
 
-    # -----------------------------------------
-    # Language Route
-    # -----------------------------------------
+    # ---------------------------
+    # Language route
+    # ---------------------------
     @app.route('/set_language/<lang_code>')
     def set_language(lang_code):
         if lang_code not in TRANSLATIONS:
@@ -112,17 +112,17 @@ def create_app():
 
         return redirect(request.referrer or url_for('dashboard'))
 
-    # -----------------------------------------
+    # ---------------------------
     # Dashboard
-    # -----------------------------------------
+    # ---------------------------
     @app.route('/')
     @app.route('/dashboard')
     def dashboard():
         return render_template('dashboard.html')
 
-    # -----------------------------------------
+    # ---------------------------
     # Income Overview
-    # -----------------------------------------
+    # ---------------------------
     @app.route('/income')
     def income_overview():
         conn = getattr(g, "db_conn", None)
@@ -156,9 +156,9 @@ def create_app():
             total_delivery=total_delivery,
         )
 
-    # -----------------------------------------
-    # Income – Record Sales
-    # -----------------------------------------
+    # ---------------------------
+    # Record Sales
+    # ---------------------------
     @app.route('/income/record', methods=['GET', 'POST'])
     def record_sales():
         conn = getattr(g, "db_conn", None)
@@ -173,18 +173,8 @@ def create_app():
 
             sales_rows = []
             for mid in menu_ids:
-                dine_in = request.form.get(f"dine_in_{mid}", "0")
-                delivery = request.form.get(f"delivery_{mid}", "0")
-
-                try:
-                    dine_in_qty = int(dine_in)
-                except ValueError:
-                    dine_in_qty = 0
-
-                try:
-                    delivery_qty = int(delivery)
-                except ValueError:
-                    delivery_qty = 0
+                dine_in_qty = int(request.form.get(f"dine_in_{mid}", "0") or 0)
+                delivery_qty = int(request.form.get(f"delivery_{mid}", "0") or 0)
 
                 sales_rows.append({
                     "menu_item_id": int(mid),
@@ -198,20 +188,41 @@ def create_app():
         menu_items = menu_model.get_menu_items(conn, include_inactive=False)
         return render_template("income/record_sales.html", menu_items=menu_items, date_str=today_str)
 
-    # -----------------------------------------
-    # Menu Pages
-    # -----------------------------------------
-    @app.route('/menu')
+    # ---------------------------
+    # Menu List
+    # ---------------------------
+    @app.route('/menu', methods=['GET', 'POST'])
     def menu_list():
-        return render_template('income/menu.html')
+        conn = getattr(g, "db_conn", None)
+        if not conn:
+            return render_template("income/menu.html", menu_items=[])
+
+        if request.method == "POST":
+            name = request.form.get("name", "").strip()
+            category = request.form.get("category", "").strip()
+            price_str = request.form.get("price", "").strip()
+
+            if name and price_str:
+                try:
+                    price = float(price_str)
+                except ValueError:
+                    price = 0.0
+
+                if price > 0:
+                    menu_model.add_menu_item(conn, name, category, price, image_path=None)
+
+            return redirect(url_for("menu_list"))
+
+        menu_items = menu_model.get_menu_items(conn, include_inactive=True)
+        return render_template("income/menu.html", menu_items=menu_items)
 
     @app.route('/menu/recipes')
     def menu_recipes():
         return render_template('income/recipes.html')
 
-    # -----------------------------------------
-    # Inventory Pages
-    # -----------------------------------------
+    # ---------------------------
+    # Inventory
+    # ---------------------------
     @app.route('/inventory')
     def inventory_list():
         return render_template('inventory/list.html')
@@ -226,9 +237,9 @@ def create_app():
     def inventory_suggestions():
         return render_template('inventory/suggestions.html')
 
-    # -----------------------------------------
-    # Employees & Schedules
-    # -----------------------------------------
+    # ---------------------------
+    # Employees
+    # ---------------------------
     @app.route('/employees')
     def employees_list():
         return render_template('employees/list.html')
@@ -243,18 +254,18 @@ def create_app():
             pass
         return render_template('employees/replacement.html')
 
-    # -----------------------------------------
+    # ---------------------------
     # Wages
-    # -----------------------------------------
+    # ---------------------------
     @app.route('/wages', methods=['GET', 'POST'])
     def wages():
         if request.method == 'POST':
             pass
         return render_template('wages/index.html')
 
-    # -----------------------------------------
+    # ---------------------------
     # Settings
-    # -----------------------------------------
+    # ---------------------------
     @app.route('/settings', methods=['GET', 'POST'])
     def settings():
         conn = getattr(g, 'db_conn', None)
@@ -280,9 +291,9 @@ def create_app():
     return app
 
 
-# -----------------------------------------
-# Run Application
-# -----------------------------------------
+# ---------------------------
+# Run App
+# ---------------------------
 if __name__ == '__main__':
     app = create_app()
     app.run(debug=True)
