@@ -1,7 +1,7 @@
 from flask import Flask, render_template, redirect, url_for, request, session, g
 from models.db import get_connection, init_db
 from models import settings as settings_model
-from datetime import date, timedelta  # for default date ranges
+from datetime import date, timedelta
 
 from models import income as income_model
 from models import menu as menu_model
@@ -53,10 +53,14 @@ TRANSLATIONS = {
     }
 }
 
+
 def create_app():
     app = Flask(__name__)
     app.config['SECRET_KEY'] = 'change-this-secret-key'
 
+    # -----------------------------------------
+    # Database Connection
+    # -----------------------------------------
     @app.before_request
     def before_request():
         g.db_conn = get_connection()
@@ -68,22 +72,32 @@ def create_app():
         if conn is not None:
             conn.close()
 
+    # -----------------------------------------
+    # Global Translations + Settings
+    # -----------------------------------------
     @app.context_processor
     def inject_globals():
         conn = getattr(g, 'db_conn', None)
         app_settings = settings_model.get_settings(conn) if conn else {}
+
         default_lang = app_settings.get('language', 'en')
         lang = session.get('lang', default_lang)
+
         if lang not in TRANSLATIONS:
             lang = 'en'
-        t = TRANSLATIONS[lang]
-        return dict(settings=app_settings, t=t, current_lang=lang)
 
+        return dict(settings=app_settings, t=TRANSLATIONS[lang], current_lang=lang)
+
+    # -----------------------------------------
+    # Language Route
+    # -----------------------------------------
     @app.route('/set_language/<lang_code>')
     def set_language(lang_code):
         if lang_code not in TRANSLATIONS:
             lang_code = 'en'
+
         session['lang'] = lang_code
+
         conn = getattr(g, 'db_conn', None)
         if conn:
             current = settings_model.get_settings(conn)
@@ -95,122 +109,98 @@ def create_app():
                 photo_path=current.get('photo_path'),
                 kakao_link=current.get('kakao_link'),
             )
-        ref = request.referrer or url_for('dashboard')
-        return redirect(ref)
 
+        return redirect(request.referrer or url_for('dashboard'))
+
+    # -----------------------------------------
+    # Dashboard
+    # -----------------------------------------
     @app.route('/')
     @app.route('/dashboard')
     def dashboard():
         return render_template('dashboard.html')
 
-   @app.route('/income')
+    # -----------------------------------------
+    # Income Overview
+    # -----------------------------------------
+    @app.route('/income')
     def income_overview():
-    """
-    Show income summary for a date range.
+        conn = getattr(g, "db_conn", None)
 
-    - If user does not give dates, we show the last 7 days by default.
-    - Uses models.income.get_daily_income(...) to compute totals.
-    """
-    conn = getattr(g, "db_conn", None)
+        today = date.today()
+        default_start = (today - timedelta(days=6)).isoformat()
+        default_end = today.isoformat()
 
-    # Today and 6 days ago → default last 7 days
-    today = date.today()
-    default_start = (today - timedelta(days=6)).isoformat()
-    default_end = today.isoformat()
+        start_date = request.args.get("start_date") or default_start
+        end_date = request.args.get("end_date") or default_end
 
-    # Get dates from query params (?start_date=...&end_date=...)
-    start_date = request.args.get("start_date") or default_start
-    end_date = request.args.get("end_date") or default_end
+        daily_rows = []
+        total_income = 0.0
+        total_dine_in = 0.0
+        total_delivery = 0.0
 
-    daily_rows = []
-    total_income = 0.0
-    total_dine_in = 0.0
-    total_delivery = 0.0
+        if conn:
+            daily_rows = income_model.get_daily_income(conn, start_date, end_date)
+            for row in daily_rows:
+                total_income += row["total_income"] or 0
+                total_dine_in += row["dine_in_income"] or 0
+                total_delivery += row["delivery_income"] or 0
 
-    if conn is not None:
-        daily_rows = income_model.get_daily_income(conn, start_date, end_date)
-        for row in daily_rows:
-            total_income += row["total_income"] or 0
-            total_dine_in += row["dine_in_income"] or 0
-            total_delivery += row["delivery_income"] or 0
+        return render_template(
+            "income/overview.html",
+            start_date=start_date,
+            end_date=end_date,
+            daily_rows=daily_rows,
+            total_income=total_income,
+            total_dine_in=total_dine_in,
+            total_delivery=total_delivery,
+        )
 
-    return render_template(
-        "income/overview.html",
-        start_date=start_date,
-        end_date=end_date,
-        daily_rows=daily_rows,
-        total_income=total_income,
-        total_dine_in=total_dine_in,
-        total_delivery=total_delivery,
-    )
-
-
+    # -----------------------------------------
+    # Income – Record Sales
+    # -----------------------------------------
     @app.route('/income/record', methods=['GET', 'POST'])
-    
     def record_sales():
-    """
-    Show a form to record today's (or chosen date's) sales per menu item.
+        conn = getattr(g, "db_conn", None)
+        if not conn:
+            return render_template("income/record_sales.html", menu_items=[], date_str="")
 
-    GET:
-        - Load active menu items and show a table with input boxes.
-    POST:
-        - Read quantities from the form for each item.
-        - Call income_model.record_sales_batch(...)
-    """
-    conn = getattr(g, "db_conn", None)
-    if conn is None:
-        # Should not happen normally, but just in case
-        return render_template("income/record_sales.html", menu_items=[], date_str="")
+        today_str = date.today().isoformat()
 
-    # Default date = today
-    today_str = date.today().isoformat()
+        if request.method == "POST":
+            date_str = request.form.get("date") or today_str
+            menu_ids = request.form.getlist("menu_id")
 
-    if request.method == "POST":
-        # Date comes from the form (allow user to change it)
-        date_str = request.form.get("date") or today_str
+            sales_rows = []
+            for mid in menu_ids:
+                dine_in = request.form.get(f"dine_in_{mid}", "0")
+                delivery = request.form.get(f"delivery_{mid}", "0")
 
-        # Get all menu IDs from hidden fields (one per row)
-        menu_ids = request.form.getlist("menu_id")
+                try:
+                    dine_in_qty = int(dine_in)
+                except ValueError:
+                    dine_in_qty = 0
 
-        sales_rows = []
-        for mid in menu_ids:
-            # Build input names based on menu ID
-            dine_in_name = f"dine_in_{mid}"
-            delivery_name = f"delivery_{mid}"
+                try:
+                    delivery_qty = int(delivery)
+                except ValueError:
+                    delivery_qty = 0
 
-            dine_in_qty_str = request.form.get(dine_in_name, "0")
-            delivery_qty_str = request.form.get(delivery_name, "0")
-
-            # Convert to int safely
-            try:
-                dine_in_qty = int(dine_in_qty_str) if dine_in_qty_str else 0
-            except ValueError:
-                dine_in_qty = 0
-
-            try:
-                delivery_qty = int(delivery_qty_str) if delivery_qty_str else 0
-            except ValueError:
-                delivery_qty = 0
-
-            sales_rows.append(
-                {
+                sales_rows.append({
                     "menu_item_id": int(mid),
                     "dine_in_qty": dine_in_qty,
                     "delivery_qty": delivery_qty,
-                }
-            )
+                })
 
-        # Save all rows for this date
-        income_model.record_sales_batch(conn, date_str, sales_rows)
+            income_model.record_sales_batch(conn, date_str, sales_rows)
+            return redirect(url_for("income_overview", start_date=date_str, end_date=date_str))
 
-        # After saving, redirect to income overview for that date range
-        return redirect(url_for("income_overview", start_date=date_str, end_date=date_str))
+        menu_items = menu_model.get_menu_items(conn, include_inactive=False)
+        return render_template("income/record_sales.html", menu_items=menu_items, date_str=today_str)
 
-    # If GET: show form with all active menu items
-    menu_items = menu_model.get_menu_items(conn, include_inactive=False)
-    return render_template("income/record_sales.html", menu_items=menu_items, date_str=today_str)
-
-
+    # -----------------------------------------
+    # Menu Pages
+    # -----------------------------------------
     @app.route('/menu')
     def menu_list():
         return render_template('income/menu.html')
@@ -219,6 +209,9 @@ def create_app():
     def menu_recipes():
         return render_template('income/recipes.html')
 
+    # -----------------------------------------
+    # Inventory Pages
+    # -----------------------------------------
     @app.route('/inventory')
     def inventory_list():
         return render_template('inventory/list.html')
@@ -233,6 +226,9 @@ def create_app():
     def inventory_suggestions():
         return render_template('inventory/suggestions.html')
 
+    # -----------------------------------------
+    # Employees & Schedules
+    # -----------------------------------------
     @app.route('/employees')
     def employees_list():
         return render_template('employees/list.html')
@@ -247,20 +243,28 @@ def create_app():
             pass
         return render_template('employees/replacement.html')
 
+    # -----------------------------------------
+    # Wages
+    # -----------------------------------------
     @app.route('/wages', methods=['GET', 'POST'])
     def wages():
         if request.method == 'POST':
             pass
         return render_template('wages/index.html')
 
+    # -----------------------------------------
+    # Settings
+    # -----------------------------------------
     @app.route('/settings', methods=['GET', 'POST'])
     def settings():
         conn = getattr(g, 'db_conn', None)
         app_settings = settings_model.get_settings(conn)
-        if request.method == 'POST' and conn is not None:
+
+        if request.method == 'POST' and conn:
             restaurant_name = request.form.get('restaurant_name') or 'My Restaurant'
             language = request.form.get('language') or app_settings.get('language', 'en')
             kakao_link = request.form.get('kakao_link') or ''
+
             settings_model.update_settings(
                 conn,
                 restaurant_name=restaurant_name,
@@ -270,11 +274,15 @@ def create_app():
                 kakao_link=kakao_link,
             )
             return redirect(url_for('settings'))
+
         return render_template('settings/branding.html', app_settings=app_settings)
 
     return app
 
 
+# -----------------------------------------
+# Run Application
+# -----------------------------------------
 if __name__ == '__main__':
     app = create_app()
     app.run(debug=True)
